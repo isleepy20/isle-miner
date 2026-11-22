@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Isle Miner</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#0b2a3a;color:#eaf6ff;font:16px system-ui,sans-serif;padding:12px}
+h1{font-size:20px;margin:0 0 4px}
+#gold{font-size:28px;font-weight:700;color:#ffd54a}
+#ips{opacity:.8;margin-bottom:10px}
+.card{background:#12425a;border-radius:14px;padding:12px;margin:10px 0}
+.card h2{margin:0 0 4px;font-size:17px}
+.row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+button{flex:1;min-width:110px;padding:12px;border:0;border-radius:10px;background:#ffb300;color:#2b1b00;font-weight:700;font-size:15px}
+button.b{background:#38c6a5;color:#003a2e}
+button:disabled{opacity:.4}
+.t{font-variant-numeric:tabular-nums;color:#9fe8d6;min-width:90px}
+.hide{display:none}
+</style></head><body>
+<h1>⛏ Isle Miner</h1>
+<div id="gold"></div><div id="ips"></div><div id="list"></div>
+<script>
+const H=7200, CAP=86400;               // +2h = 7200 s per tap; offline progress capped at 24h
+const ISL=[
+ {n:"Copper Cove",inc:1,cost:0,up:10},
+ {n:"Silver Shoal",inc:8,cost:500,up:120},
+ {n:"Gold Reef",inc:60,cost:8000,up:1500},
+ {n:"Gem Atoll",inc:450,cost:120000,up:20000}];
+const GB=ISL.length;                   // index of the all-islands boost
+let S={gold:0,lv:[1,0,0,0],boost:[0,0,0,0,0],last:Date.now()};
+const g=id=>document.getElementById(id);
+
+function load(){try{
+  const r=window.Android?Android.load():localStorage.getItem("im");
+  if(r){const o=JSON.parse(r);if(o&&o.lv&&o.boost)S=o}
+}catch(e){}}
+function save(){S.last=Date.now();try{
+  const j=JSON.stringify(S);
+  window.Android?Android.save(j):localStorage.setItem("im",j);
+}catch(e){}}
+window.saveNow=save;
+
+const rate=i=>S.lv[i]*ISL[i].inc*(S.boost[i]>0?2:1)*(S.boost[GB]>0?2:1);
+const total=()=>ISL.reduce((a,_,i)=>a+rate(i),0);
+function advance(dt){
+  while(dt>1e-9){
+    let st=dt;
+    for(const b of S.boost) if(b>0&&b<st) st=b;
+    S.gold+=total()*st;
+    for(let i=0;i<S.boost.length;i++) if(S.boost[i]>0) S.boost[i]=Math.max(0,S.boost[i]-st);
+    dt-=st;
+  }
+}
+const cost=i=>S.lv[i]===0?ISL[i].cost:Math.ceil(ISL[i].up*Math.pow(1.15,S.lv[i]-1));
+function upgrade(i){const c=cost(i);if(S.gold>=c){S.gold-=c;S.lv[i]++;save();ui()}}
+function addBoost(i){S.boost[i]+=H;save();ui()}   // starts a 2h boost instantly, or stacks +2h
+
+const U=["","K","M","B","T","Qa","Qi"];
+function f(n){if(n<1000)return n.toFixed(n<10?1:0);let i=0;while(n>=1000&&i<U.length-1){n/=1000;i++}return n.toFixed(2)+U[i]}
+function tm(s){s=Math.ceil(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h+":"+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")}
+
+const boostRow=i=>`<div class="row"><span class="t" id="bt${i}"></span>
+ <button class="b" id="bs${i}" onclick="addBoost(${i})">⚡ Start 2h boost</button>
+ <button class="b" id="bp${i}" onclick="addBoost(${i})">+2h</button></div>`;
+const list=g("list");
+ISL.forEach((o,i)=>list.insertAdjacentHTML("beforeend",
+ `<div class="card"><h2>${o.n}</h2><div id="ii${i}"></div>
+  <div class="row"><button id="up${i}" onclick="upgrade(${i})"></button></div>
+  <div id="bx${i}">${boostRow(i)}</div></div>`));
+list.insertAdjacentHTML("beforeend",`<div class="card"><h2>🌊 All Islands x2 Boost</h2>${boostRow(GB)}</div>`);
+
+function bui(i){const a=S.boost[i]>0;
+  g("bt"+i).textContent=a?"Active "+tm(S.boost[i]):"Inactive";
+  g("bs"+i).classList.toggle("hide",a);
+  g("bp"+i).classList.toggle("hide",!a);}
+function ui(){
+  g("gold").textContent="🪙 "+f(S.gold);
+  g("ips").textContent=f(total())+" / sec";
+  ISL.forEach((o,i)=>{const own=S.lv[i]>0,c=cost(i);
+    g("ii"+i).textContent=own?"Level "+S.lv[i]+" · "+f(rate(i))+"/s":"Locked";
+    g("up"+i).textContent=(own?"Upgrade ":"Unlock ")+f(c);
+    g("up"+i).disabled=S.gold<c;
+    g("bx"+i).classList.toggle("hide",!own);
+    bui(i);});
+  bui(GB);
+}
+
+load();
+advance(Math.min(CAP,Math.max(0,(Date.now()-S.last)/1000)));   // offline progress; boosts keep counting down
+let t0=Date.now();
+setInterval(()=>{const n=Date.now();advance(Math.min(CAP,(n-t0)/1000));t0=n;ui()},250);
+setInterval(save,5000);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)save()});
+ui();
+</script></body></html>
